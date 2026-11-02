@@ -158,10 +158,10 @@ html, body {
 .gap { height: 0.8em; margin: 0; }
 
 /* LRC: 지난 줄 흐리게, 지금 줄 노랗게, 다음 줄은 미리 읽을 수 있게 */
-.lines.timed .line { color: #6c6c76; transition: color 0.2s, opacity 0.2s; cursor: pointer; }
-.lines.timed .line.past { opacity: 0.45; }
-.lines.timed .line.next { color: #d6d6dc; }
-.lines.timed .line.now { color: var(--accent); }
+:is(.lines.timed, .lines.voiced) .line { color: #6c6c76; transition: color 0.2s, opacity 0.2s; cursor: pointer; }
+:is(.lines.timed, .lines.voiced) .line.past { opacity: 0.45; }
+:is(.lines.timed, .lines.voiced) .line.next { color: #d6d6dc; }
+:is(.lines.timed, .lines.voiced) .line.now { color: var(--accent); }
 .lines.timed .line.instrumental { font-size: 0.6em; letter-spacing: 0.3em; }
 
 .controls {

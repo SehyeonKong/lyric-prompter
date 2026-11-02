@@ -5,6 +5,9 @@ import { openMic, openTabAudio, canCaptureTab, listen } from './audio.js';
 import { parseYouTubeId, createPlayer, fetchVideoInfo, PLAYING } from './youtube.js';
 import { searchQueries, searchLrclib, findLyrics } from './lrclib.js';
 import { alignLyrics } from './align.js';
+import { VoiceTracker } from './voice.js';
+
+const SpeechRec = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
 const $ = (id) => document.getElementById(id);
 
@@ -436,10 +439,14 @@ function showPlay(song) {
   $('g-speed').hidden = timed;
   $('p-fs').hidden = !fullscreenSupported();
   $('p-follow').hidden = !refFrames;
+  $('p-voice').hidden = !SpeechRec;
 
   const state = { running: false, elapsed: 0, startedAt: 0, pos: 0, lastSet: 0, lastFrame: 0, current: -2, raf: 0 };
   // 음악 따라가기: 켜져 있으면 재생 중 시간은 마이크로 들은 위치에서 온다
   const follow = { enabled: !!refFrames && song.follow !== false, follower: null, listener: null, starting: false };
+  // 목소리 따라가기: 켜져 있으면 시간·자동 스크롤 대신 음성 인식된 글자로 지금 줄을 찾는다
+  const voice = { enabled: !!SpeechRec && song.voice === true, rec: null, tracker: null, heard: '', lastMove: 0 };
+  const lineEls = () => [...box.querySelectorAll('.line')];
   const sec = () => performance.now() / 1000;
   const now = () => {
     if (!state.running) return state.elapsed;
@@ -460,7 +467,9 @@ function showPlay(song) {
       stopFollow();
     }
     state.running = on;
-    if (on && follow.enabled) startFollow();
+    if (on && voice.enabled) startVoice();
+    else if (on && follow.enabled) startFollow();
+    if (!on) stopVoice();
     $('p-toggle').textContent = on ? '❚❚ 멈춤' : state.elapsed > 0 ? '▶ 계속' : '▶ 시작';
     showStatus();
     poke();
@@ -501,6 +510,7 @@ function showPlay(song) {
   function toggleFollow() {
     follow.enabled = !follow.enabled;
     song.follow = follow.enabled;
+    if (follow.enabled && voice.enabled) toggleVoice();
     saveDb();
     if (state.running && follow.enabled) startFollow();
     if (state.running && !follow.enabled) {
@@ -517,7 +527,95 @@ function showPlay(song) {
     showStatus();
   }
 
+  function startVoice() {
+    if (voice.rec) return;
+    voice.tracker ??= new VoiceTracker(lineEls().map((el) => el.textContent));
+    const rec = new SpeechRec();
+    rec.lang = 'ko-KR';
+    rec.continuous = true;
+    rec.interimResults = true; // 다 말하기 전 중간 결과도 받아야 빨리 따라간다
+    rec.onresult = (e) => {
+      let text = '';
+      for (let i = 0; i < e.results.length; i++) text += `${e.results[i][0].transcript} `;
+      voice.heard = text.trim();
+      if (voice.tracker.hear(text)) {
+        voice.lastMove = sec();
+        showLine(voice.tracker.focusLine);
+      }
+      showStatus();
+    };
+    rec.onerror = (e) => {
+      if (!['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(e.error)) return;
+      voice.enabled = false;
+      stopVoice();
+      showVoice();
+      toast('음성 인식을 쓸 수 없어(마이크·음성 인식 권한이나 인터넷을 확인해줘)');
+    };
+    // 브라우저가 몇십 초마다·조용하면 인식을 끊어서, 켜져 있는 동안은 다시 켠다
+    rec.onend = () => {
+      if (voice.rec !== rec) return;
+      setTimeout(() => {
+        if (voice.rec !== rec) return;
+        try {
+          rec.start();
+        } catch {}
+      }, 100);
+    };
+    voice.rec = rec;
+    try {
+      rec.start();
+    } catch {}
+    showStatus();
+  }
+
+  function stopVoice() {
+    const rec = voice.rec;
+    voice.rec = null;
+    rec?.abort();
+  }
+
+  function toggleVoice() {
+    voice.enabled = !voice.enabled;
+    song.voice = voice.enabled;
+    if (voice.enabled && follow.enabled) toggleFollow();
+    saveDb();
+    if (voice.enabled) {
+      voice.tracker ??= new VoiceTracker(lineEls().map((el) => el.textContent));
+      showLine(voice.tracker.focusLine, true);
+      if (state.running) startVoice();
+    } else {
+      stopVoice();
+      // 시간 기준으로 돌아갈 땐 지금 보던 줄 시간에서 이어서
+      if (timed && state.current >= 0) {
+        state.elapsed = Math.max(0, lines[state.current].time - song.offset + 0.001);
+        state.startedAt = performance.now();
+      }
+    }
+    showVoice();
+  }
+
+  function showVoice() {
+    box.classList.toggle('voiced', voice.enabled);
+    $('p-voice').classList.toggle('on', voice.enabled);
+    $('p-voice').textContent = voice.enabled ? '🗣 목소리 따라가기 켬' : '🗣 목소리 따라가기 끔';
+    $('g-speed').hidden = timed || voice.enabled;
+    $('g-offset').hidden = !timed || voice.enabled;
+    $('p-clock').hidden = !timed || voice.enabled;
+    if (!voice.enabled && !timed) lineEls().forEach((el) => el.classList.remove('past', 'now', 'next'));
+    if (!voice.enabled && timed) syncLine(true);
+    showStatus();
+  }
+
   function showStatus() {
+    if (voice.enabled) {
+      status.hidden = !state.running;
+      if (status.hidden) return;
+      const tail = voice.heard.slice(-14);
+      const text = tail ? `🗣 “${tail}”` : '🗣 듣는 중 — 불러봐';
+      if (status.textContent !== text) status.textContent = text;
+      status.dataset.state = sec() - voice.lastMove < 4 ? 'following' : 'listening';
+      return;
+    }
     status.hidden = !(follow.enabled && state.running);
     if (status.hidden) return;
     const f = follow.listener ? follow.follower : null;
@@ -527,7 +625,9 @@ function showPlay(song) {
   }
 
   function frame(t) {
-    if (timed) {
+    if (voice.enabled) {
+      // 줄은 음성 인식 결과가 올 때 옮긴다
+    } else if (timed) {
       syncLine();
       showStatus();
     } else {
@@ -547,15 +647,20 @@ function showPlay(song) {
     const t = now();
     const clock = formatTime(t, false);
     if ($('p-clock').textContent !== clock) $('p-clock').textContent = clock;
-    const idx = lineIndexAt(lines, t + song.offset);
+    showLine(lineIndexAt(lines, t + song.offset), force);
+  }
+
+  // idx번째 줄을 강조하고 화면 40% 높이로 옮긴다(지난 줄 흐리게, 다음 줄 밝게)
+  function showLine(idx, force = false) {
     if (idx === state.current && !force) return;
     state.current = idx;
-    [...box.children].forEach((el, i) => {
+    const els = lineEls();
+    els.forEach((el, i) => {
       el.classList.toggle('past', i < idx);
       el.classList.toggle('now', i === idx);
       el.classList.toggle('next', i === idx + 1);
     });
-    const el = box.children[Math.max(0, idx)];
+    const el = els[Math.max(0, idx)];
     if (el) {
       scroller.scrollTo({
         top: el.offsetTop - scroller.clientHeight * 0.4 + el.offsetHeight / 2,
@@ -574,7 +679,14 @@ function showPlay(song) {
     syncLine();
   }
 
+  function voiceJump(i) {
+    i = Math.min(lineEls().length - 1, Math.max(0, i));
+    voice.tracker.jumpToLine(i);
+    showLine(i);
+  }
+
   function step(dir) {
+    if (voice.enabled) return voiceJump(voice.tracker.focusLine + dir);
     if (timed) return seekTo(state.current + dir);
     const dy = dir * scroller.clientHeight * 0.3;
     if (state.running) {
@@ -592,7 +704,8 @@ function showPlay(song) {
     follow.follower = null;
     $('p-toggle').textContent = '▶ 시작';
     scroller.scrollTop = 0;
-    if (timed) syncLine(true);
+    if (voice.enabled) voiceJump(0);
+    else if (timed) syncLine(true);
   }
 
   function adjust(act) {
@@ -606,11 +719,13 @@ function showPlay(song) {
       case 'restart': return restart();
       case 'fullscreen': return toggleFullscreen();
       case 'follow': return toggleFollow();
+      case 'voice': return toggleVoice();
       default: return;
     }
     saveDb();
     showValues();
-    if (timed) syncLine(act === 'smaller' || act === 'bigger');
+    if (voice.enabled) showLine(state.current, true);
+    else if (timed) syncLine(act === 'smaller' || act === 'bigger');
   }
 
   function showValues() {
@@ -651,9 +766,11 @@ function showPlay(song) {
   // 버튼이 숨어 있을 때 첫 탭은 버튼만 보여주고, 그다음부터 줄을 누르면 그 줄로 이동
   on(box, 'click', (e) => {
     const line = e.target.closest('.line');
-    if (timed && line && !tapWhileHidden) seekTo(Number(line.dataset.i));
+    if (!line || tapWhileHidden) return;
+    if (voice.enabled) voiceJump(lineEls().indexOf(line));
+    else if (timed) seekTo(Number(line.dataset.i));
   });
-  on(window, 'resize', () => timed && syncLine(true));
+  on(window, 'resize', () => (voice.enabled ? showLine(state.current, true) : timed && syncLine(true)));
   on(document, 'keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const keys = {
@@ -681,7 +798,11 @@ function showPlay(song) {
   showValues();
   showFollow();
   $('p-toggle').textContent = '▶ 시작';
-  if (timed) syncLine(true);
+  if (voice.enabled) {
+    voice.tracker = new VoiceTracker(lineEls().map((el) => el.textContent));
+    showLine(0, true);
+  } else if (timed) syncLine(true);
+  showVoice();
   poke();
 
   return () => {

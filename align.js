@@ -6,7 +6,7 @@
 const KEEP = /[\p{L}\p{N}]/u;
 const NOISE = /\[[^\]]*\]|\([^)]*\)|♪/g; // [음악] (박수) 같은 자막 표시
 
-const chars = (text) => [...text.replace(NOISE, ' ').toLowerCase()].filter((c) => KEEP.test(c));
+export const chars = (text) => [...text.replace(NOISE, ' ').toLowerCase()].filter((c) => KEEP.test(c));
 
 function jamo(ch) {
   const c = ch.charCodeAt(0) - 0xac00;
