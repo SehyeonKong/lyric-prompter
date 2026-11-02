@@ -39,11 +39,12 @@
     </header>
     <form id="edit-form" class="edit-form">
       <input id="f-title" class="field" placeholder="제목" required autocomplete="off">
+      <input id="f-youtube" class="field" type="url" inputmode="url" placeholder="유튜브 링크 (선택) — 싱크 만들 때 앱 안에서 틀어 줌" autocomplete="off">
       <textarea id="f-text" class="field" placeholder="가사를 붙여넣어.&#10;&#10;[00:12.34] 처럼 시간이 붙은 LRC 가사면 노래 시간에 맞춰 줄이 강조되고,&#10;그냥 가사면 자동 스크롤로 올라가." required></textarea>
       <p id="f-mode" class="hint"></p>
       <div class="row">
         <button type="submit" class="btn primary">저장</button>
-        <button type="button" id="f-sync" class="btn">탭으로 싱크 만들기</button>
+        <button type="button" id="f-sync" class="btn">싱크 만들기 · 음악 기억</button>
         <span class="spacer"></span>
         <button type="button" id="f-delete" class="btn danger">삭제</button>
       </div>
@@ -73,8 +74,10 @@
         <button class="btn" type="button" data-act="smaller" aria-label="글자 작게">가−</button>
         <button class="btn" type="button" data-act="bigger" aria-label="글자 크게">가+</button>
       </div>
+      <button id="p-follow" class="btn" type="button" data-act="follow">🎤 따라가기</button>
       <button id="p-fs" class="btn" type="button" data-act="fullscreen">전체화면</button>
     </div>
+    <span id="p-status" class="status" hidden></span>
   </section>
 
   <!-- 탭 싱크 -->
@@ -84,6 +87,19 @@
       <span id="s-title" class="p-title"></span>
       <span id="s-clock" class="clock">00:00.00</span>
     </header>
+    <div id="s-video" class="s-video" hidden></div>
+    <div id="s-mode" class="s-row" hidden>
+      <button class="btn" type="button" data-mode="tap">줄 시간 다시 찍기</button>
+      <button class="btn" type="button" data-mode="learn">음악만 기억하기</button>
+    </div>
+    <div id="s-options" class="s-row">
+      <label class="check"><input type="checkbox" id="s-learn"> 따라가기용으로 음악도 기억하기</label>
+      <select id="s-source" class="field select">
+        <option value="tab">이 탭 소리로 (크롬)</option>
+        <option value="mic">마이크로</option>
+      </select>
+      <span id="s-learned" class="hint"></span>
+    </div>
     <p id="s-hint" class="hint center"></p>
     <div id="s-pad" class="sync-pad">
       <p id="s-prev" class="s-prev"></p>
