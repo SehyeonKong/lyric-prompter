@@ -4,6 +4,7 @@ import { Follower } from './follow.js';
 import { openMic, openTabAudio, canCaptureTab, listen } from './audio.js';
 import { parseYouTubeId, createPlayer, fetchVideoInfo, PLAYING } from './youtube.js';
 import { searchQueries, searchLrclib, findLyrics } from './lrclib.js';
+import { alignLyrics } from './align.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -235,6 +236,13 @@ let editToken = 0; // 다른 곡으로 넘어가거나 새로 찾으면 늦게 �
 let autoTitle = false; // 제목을 앱이 채웠으면 찾은 곡 제목으로 바꿔도 된다
 const BUSY = '가사 DB 서버가 바빠서 못 찾았어. 잠시 뒤 다시 눌러줘.';
 
+// 가사 칸에 시간 없는 내 가사가 있고 '시간만 가져오기'가 켜져 있으면, 찾은 가사로 바꾸지 않고 시간만 입힌다
+const hasMyLyrics = () => {
+  const t = $('f-text').value.trim();
+  return !!t && !isLrc(t);
+};
+const keepMine = () => hasMyLyrics() && $('find-keep').checked;
+
 function showResults(results) {
   $('find-results').replaceChildren(
     ...results.slice(0, 10).map((r) => {
@@ -249,8 +257,9 @@ function showResults(results) {
         }),
       );
       b.addEventListener('click', () => {
+        if (keepMine() && !r.syncedLyrics) return ($('find-msg').textContent = '이건 시간이 없는 가사라 시간을 가져올 수 없어.');
         const cur = $('f-text').value.trim();
-        if (cur && cur !== (r.syncedLyrics || r.plainLyrics).trim() && !confirm('지금 가사를 이걸로 바꿀까?')) return;
+        if (!keepMine() && cur && cur !== (r.syncedLyrics || r.plainLyrics).trim() && !confirm('지금 가사를 이걸로 바꿀까?')) return;
         applyLyrics(r);
       });
       const li = document.createElement('li');
@@ -261,11 +270,19 @@ function showResults(results) {
 }
 
 function applyLyrics(r) {
-  $('f-text').value = r.syncedLyrics || r.plainLyrics;
   if (autoTitle || !$('f-title').value.trim()) {
     $('f-title').value = r.trackName;
     autoTitle = true;
   }
+  if (keepMine() && r.syncedLyrics) {
+    const rows = alignLyrics(lyricLines($('f-text').value), parseLrc(r.syncedLyrics));
+    const guessed = rows.filter((x) => x.guessed).length;
+    $('f-text').value = toLrc(rows);
+    updateMode();
+    $('find-msg').textContent = `내 가사 ${rows.length}줄에 ‘${r.trackName} — ${r.artistName}’ 시간을 맞췄어${guessed ? ` (${guessed}줄은 못 찾아서 앞뒤로 추정)` : ''}. 싱크 화면 ‘시간 확인’에서 들어봐.`;
+    return;
+  }
+  $('f-text').value = r.syncedLyrics || r.plainLyrics;
   updateMode();
   $('find-msg').textContent = `‘${r.trackName} — ${r.artistName}’ 가사를 넣었어${r.syncedLyrics ? '(시간 포함)' : '(시간 없음)'}. 다른 곡이면 아래에서 골라줘.`;
 }
@@ -275,6 +292,7 @@ async function runFind(queries, title) {
   const token = ++editToken;
   $('finder').hidden = false;
   $('find-q').value = queries[0] ?? '';
+  $('find-keep-row').hidden = !hasMyLyrics();
   $('find-results').replaceChildren();
   $('find-msg').textContent = '가사 찾는 중…';
   try {
@@ -282,6 +300,7 @@ async function runFind(queries, title) {
     if (token !== editToken) return;
     showResults(results);
     if (!results.length) $('find-msg').textContent = '못 찾았어. 검색어를 ‘가수 곡제목’으로 고쳐서 찾아봐.';
+    else if (sure && keepMine() && results[0].syncedLyrics) applyLyrics(results[0]);
     else if (sure && !$('f-text').value.trim()) applyLyrics(results[0]);
     else $('find-msg').textContent = sure ? '찾았어. 넣을 걸 골라줘.' : '비슷한 곡만 나왔어. 맞는 게 있으면 골라줘.';
   } catch {
@@ -293,6 +312,7 @@ async function manualFind() {
   const q = $('find-q').value.trim();
   if (!q) return;
   const token = ++editToken;
+  $('find-keep-row').hidden = !hasMyLyrics();
   $('find-msg').textContent = '가사 찾는 중…';
   try {
     const results = await searchLrclib(q);
@@ -304,7 +324,7 @@ async function manualFind() {
   }
 }
 
-// 유튜브 링크를 넣으면: 제목이 비었으면 영상 제목으로, 가사가 비었으면 가사 찾기
+// 유튜브 링크를 넣으면: 제목이 비었으면 영상 제목으로, 가사가 비었거나 시간 없는 내 가사면 가사 찾기
 $('f-youtube').addEventListener('change', async () => {
   const id = parseYouTubeId($('f-youtube').value);
   if (!id) return;
@@ -315,7 +335,7 @@ $('f-youtube').addEventListener('change', async () => {
     $('f-title').value = info.title;
     autoTitle = true;
   }
-  if (!$('f-text').value.trim()) runFind(searchQueries(info.title, info.author), info.title);
+  if (!$('f-text').value.trim() || hasMyLyrics()) runFind(searchQueries(info.title, info.author), info.title);
 });
 
 $('f-find').addEventListener('click', async () => {
