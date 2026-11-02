@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="가사">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <title>가사 프롬프터</title>
+</head>
+<body>
+  <!-- 목록 -->
+  <section id="view-list" class="view page">
+    <header class="bar">
+      <h1>가사 프롬프터</h1>
+      <a class="btn primary" href="#/edit/new">+ 새 곡</a>
+    </header>
+    <input id="search" class="field" type="search" placeholder="제목이나 가사로 찾기" autocomplete="off">
+    <ul id="song-list" class="song-list"></ul>
+    <p id="empty" class="hint center" hidden>아직 곡이 없어. ‘+ 새 곡’으로 가사를 붙여넣어 봐.</p>
+    <footer class="backup">
+      <span class="hint">가사는 이 기기 브라우저에만 저장돼.</span>
+      <button id="export" class="btn ghost" type="button">백업 내보내기</button>
+      <label class="btn ghost">백업 가져오기<input id="import" type="file" accept=".json,application/json" hidden></label>
+    </footer>
+  </section>
+
+  <!-- 편집 -->
+  <section id="view-edit" class="view page" hidden>
+    <header class="bar">
+      <a class="btn ghost" href="#/">← 목록</a>
+      <h1 id="edit-heading">새 곡</h1>
+    </header>
+    <form id="edit-form" class="edit-form">
+      <input id="f-title" class="field" placeholder="제목" required autocomplete="off">
+      <textarea id="f-text" class="field" placeholder="가사를 붙여넣어.&#10;&#10;[00:12.34] 처럼 시간이 붙은 LRC 가사면 노래 시간에 맞춰 줄이 강조되고,&#10;그냥 가사면 자동 스크롤로 올라가." required></textarea>
+      <p id="f-mode" class="hint"></p>
+      <div class="row">
+        <button type="submit" class="btn primary">저장</button>
+        <button type="button" id="f-sync" class="btn">탭으로 싱크 만들기</button>
+        <span class="spacer"></span>
+        <button type="button" id="f-delete" class="btn danger">삭제</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 무대 -->
+  <section id="view-play" class="view stage" hidden>
+    <div id="scroller" class="scroller"><div id="lines" class="lines"></div></div>
+    <div id="controls" class="controls">
+      <a class="btn ghost" href="#/">목록</a>
+      <span id="p-title" class="p-title"></span>
+      <button id="p-toggle" class="btn primary" type="button">▶ 시작</button>
+      <span id="p-clock" class="clock">00:00</span>
+      <div id="g-speed" class="group">
+        <button class="btn" type="button" data-act="slower" aria-label="느리게">−</button>
+        <span id="p-speed" class="value"></span>
+        <button class="btn" type="button" data-act="faster" aria-label="빠르게">+</button>
+      </div>
+      <div id="g-offset" class="group">
+        <button class="btn" type="button" data-act="later" aria-label="가사 늦게">−</button>
+        <span id="p-offset" class="value"></span>
+        <button class="btn" type="button" data-act="earlier" aria-label="가사 빨리">+</button>
+      </div>
+      <button class="btn" type="button" data-act="restart">처음</button>
+      <div class="group">
+        <button class="btn" type="button" data-act="smaller" aria-label="글자 작게">가−</button>
+        <button class="btn" type="button" data-act="bigger" aria-label="글자 크게">가+</button>
+      </div>
+      <button id="p-fs" class="btn" type="button" data-act="fullscreen">전체화면</button>
+    </div>
+  </section>
+
+  <!-- 탭 싱크 -->
+  <section id="view-sync" class="view stage" hidden>
+    <header class="bar sync-bar">
+      <a class="btn ghost" href="#/">취소</a>
+      <span id="s-title" class="p-title"></span>
+      <span id="s-clock" class="clock">00:00.00</span>
+    </header>
+    <p id="s-hint" class="hint center"></p>
+    <div id="s-pad" class="sync-pad">
+      <p id="s-prev" class="s-prev"></p>
+      <p id="s-now" class="s-now"></p>
+      <p id="s-next" class="s-next"></p>
+    </div>
+    <div class="controls static">
+      <button id="s-undo" class="btn" type="button" disabled>↶ 한 줄 취소</button>
+      <button id="s-tap" class="btn primary big" type="button">시작</button>
+      <button id="s-save" class="btn" type="button" disabled>저장</button>
+    </div>
+  </section>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
