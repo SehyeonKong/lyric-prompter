@@ -39,7 +39,18 @@
     </header>
     <form id="edit-form" class="edit-form">
       <input id="f-title" class="field" placeholder="제목" required autocomplete="off">
-      <input id="f-youtube" class="field" type="url" inputmode="url" placeholder="유튜브 링크 (선택) — 싱크 만들 때 앱 안에서 틀어 줌" autocomplete="off">
+      <input id="f-youtube" class="field" type="url" inputmode="url" placeholder="유튜브 링크 (선택) — 넣으면 가사를 찾아 주고, 싱크 만들 때 앱 안에서 틀어 줌" autocomplete="off">
+      <div class="row">
+        <button type="button" id="f-find" class="btn">🔎 가사 찾기</button>
+        <span id="find-msg" class="hint"></span>
+      </div>
+      <div id="finder" class="finder" hidden>
+        <div class="row">
+          <input id="find-q" class="field grow" placeholder="가수 곡 제목" autocomplete="off" enterkeyhint="search">
+          <button type="button" id="find-go" class="btn">찾기</button>
+        </div>
+        <ul id="find-results" class="find-results"></ul>
+      </div>
       <textarea id="f-text" class="field" placeholder="가사를 붙여넣어.&#10;&#10;[00:12.34] 처럼 시간이 붙은 LRC 가사면 노래 시간에 맞춰 줄이 강조되고,&#10;그냥 가사면 자동 스크롤로 올라가." required></textarea>
       <p id="f-mode" class="hint"></p>
       <div class="row">
@@ -90,7 +101,7 @@
     <div id="s-video" class="s-video" hidden></div>
     <div id="s-mode" class="s-row" hidden>
       <button class="btn" type="button" data-mode="tap">줄 시간 다시 찍기</button>
-      <button class="btn" type="button" data-mode="learn">음악만 기억하기</button>
+      <button class="btn" type="button" data-mode="learn">시간 확인 · 음악 기억</button>
     </div>
     <div id="s-options" class="s-row">
       <label class="check"><input type="checkbox" id="s-learn"> 따라가기용으로 음악도 기억하기</label>
@@ -108,6 +119,7 @@
     </div>
     <div class="controls static">
       <button id="s-undo" class="btn" type="button" disabled>↶ 한 줄 취소</button>
+      <button id="s-first" class="btn" type="button" hidden>첫 소절 시작!</button>
       <button id="s-tap" class="btn primary big" type="button">시작</button>
       <button id="s-save" class="btn" type="button" disabled>저장</button>
     </div>

@@ -290,3 +290,16 @@ html, body {
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .field.select { width: auto; padding: 8px 10px; font-size: 14px; }
 .badge.follow { color: #30d158; border-color: rgba(48, 209, 88, 0.5); }
+
+/* 가사 찾기 */
+.finder { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.field.grow { flex: 1; min-width: 0; width: auto; }
+.find-results { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow-y: auto; }
+.find-results button {
+  display: flex; width: 100%; gap: 8px; align-items: center; text-align: left;
+  padding: 10px 8px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text);
+  font: inherit; font-size: 15px; cursor: pointer;
+}
+.find-results button:hover { background: var(--panel); }
+.find-results .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.find-results .meta { color: var(--muted); font-size: 13px; white-space: nowrap; }

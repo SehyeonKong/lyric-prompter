@@ -58,11 +58,14 @@ export async function createPlayer(host, videoId, { onState, onError } = {}) {
 
 export const PLAYING = 1;
 
-export async function fetchTitle(videoId) {
+// 영상 제목과 채널 이름
+export async function fetchVideoInfo(videoId) {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     const res = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`);
-    return res.ok ? (await res.json()).title : null;
+    if (!res.ok) return null;
+    const { title, author_name: author } = await res.json();
+    return { title, author };
   } catch {
     return null;
   }

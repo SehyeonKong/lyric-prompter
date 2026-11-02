@@ -2,7 +2,8 @@ import { isLrc, parseLrc, lineIndexAt, formatTime, toLrc, lyricLines } from './l
 import { HOP, encodeFrames, decodeFrames, fillGaps } from './features.js';
 import { Follower } from './follow.js';
 import { openMic, openTabAudio, canCaptureTab, listen } from './audio.js';
-import { parseYouTubeId, createPlayer, fetchTitle, PLAYING } from './youtube.js';
+import { parseYouTubeId, createPlayer, fetchVideoInfo, PLAYING } from './youtube.js';
+import { searchQueries, searchLrclib, findLyrics } from './lrclib.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -208,6 +209,11 @@ function showEdit(song) {
   $('f-youtube').value = song?.youtube ? `https://youtu.be/${song.youtube}` : '';
   $('f-text').value = song?.text ?? '';
   $('f-delete').hidden = !song;
+  editToken++;
+  autoTitle = false;
+  $('finder').hidden = true;
+  $('find-results').replaceChildren();
+  $('find-msg').textContent = '';
   updateMode();
   if (!song) $('f-title').focus();
 }
@@ -224,13 +230,114 @@ function updateMode() {
 
 $('f-text').addEventListener('input', updateMode);
 
-// 유튜브 링크를 넣었는데 제목이 비어 있으면 영상 제목으로 채운다
+// ── 가사 찾기: 유튜브 제목으로 무료 싱크 가사 DB(LRCLIB) 검색 ──
+let editToken = 0; // 다른 곡으로 넘어가거나 새로 찾으면 늦게 온 결과는 버린다
+let autoTitle = false; // 제목을 앱이 채웠으면 찾은 곡 제목으로 바꿔도 된다
+const BUSY = '가사 DB 서버가 바빠서 못 찾았어. 잠시 뒤 다시 눌러줘.';
+
+function showResults(results) {
+  $('find-results').replaceChildren(
+    ...results.slice(0, 10).map((r) => {
+      const b = Object.assign(document.createElement('button'), { type: 'button' });
+      b.append(
+        Object.assign(document.createElement('span'), { className: 'what', textContent: `${r.trackName} — ${r.artistName}` }),
+        Object.assign(document.createElement('span'), {
+          className: 'meta',
+          textContent: [r.duration ? formatTime(r.duration, false) : '', r.syncedLyrics ? '시간 ✓' : '가사만']
+            .filter(Boolean)
+            .join(' · '),
+        }),
+      );
+      b.addEventListener('click', () => {
+        const cur = $('f-text').value.trim();
+        if (cur && cur !== (r.syncedLyrics || r.plainLyrics).trim() && !confirm('지금 가사를 이걸로 바꿀까?')) return;
+        applyLyrics(r);
+      });
+      const li = document.createElement('li');
+      li.append(b);
+      return li;
+    }),
+  );
+}
+
+function applyLyrics(r) {
+  $('f-text').value = r.syncedLyrics || r.plainLyrics;
+  if (autoTitle || !$('f-title').value.trim()) {
+    $('f-title').value = r.trackName;
+    autoTitle = true;
+  }
+  updateMode();
+  $('find-msg').textContent = `‘${r.trackName} — ${r.artistName}’ 가사를 넣었어${r.syncedLyrics ? '(시간 포함)' : '(시간 없음)'}. 다른 곡이면 아래에서 골라줘.`;
+}
+
+// 여러 검색어를 차례로. 제목이 확실히 맞고 가사 칸이 비어 있으면 바로 채운다
+async function runFind(queries, title) {
+  const token = ++editToken;
+  $('finder').hidden = false;
+  $('find-q').value = queries[0] ?? '';
+  $('find-results').replaceChildren();
+  $('find-msg').textContent = '가사 찾는 중…';
+  try {
+    const { results, sure } = await findLyrics(queries, { title });
+    if (token !== editToken) return;
+    showResults(results);
+    if (!results.length) $('find-msg').textContent = '못 찾았어. 검색어를 ‘가수 곡제목’으로 고쳐서 찾아봐.';
+    else if (sure && !$('f-text').value.trim()) applyLyrics(results[0]);
+    else $('find-msg').textContent = sure ? '찾았어. 넣을 걸 골라줘.' : '비슷한 곡만 나왔어. 맞는 게 있으면 골라줘.';
+  } catch {
+    if (token === editToken) $('find-msg').textContent = BUSY;
+  }
+}
+
+async function manualFind() {
+  const q = $('find-q').value.trim();
+  if (!q) return;
+  const token = ++editToken;
+  $('find-msg').textContent = '가사 찾는 중…';
+  try {
+    const results = await searchLrclib(q);
+    if (token !== editToken) return;
+    showResults(results);
+    $('find-msg').textContent = results.length ? '넣을 걸 골라줘.' : '못 찾았어. 다른 검색어로 해봐.';
+  } catch {
+    if (token === editToken) $('find-msg').textContent = BUSY;
+  }
+}
+
+// 유튜브 링크를 넣으면: 제목이 비었으면 영상 제목으로, 가사가 비었으면 가사 찾기
 $('f-youtube').addEventListener('change', async () => {
   const id = parseYouTubeId($('f-youtube').value);
-  if (!id || $('f-title').value.trim()) return;
-  const title = await fetchTitle(id);
-  if (title && !$('f-title').value.trim()) $('f-title').value = title;
+  if (!id) return;
+  const token = editToken;
+  const info = await fetchVideoInfo(id);
+  if (!info || token !== editToken) return;
+  if (!$('f-title').value.trim()) {
+    $('f-title').value = info.title;
+    autoTitle = true;
+  }
+  if (!$('f-text').value.trim()) runFind(searchQueries(info.title, info.author), info.title);
 });
+
+$('f-find').addEventListener('click', async () => {
+  const id = parseYouTubeId($('f-youtube').value);
+  const info = id ? await fetchVideoInfo(id) : null;
+  const title = info?.title ?? $('f-title').value.trim();
+  if (!title) {
+    $('finder').hidden = false;
+    $('find-msg').textContent = '가수와 곡 제목을 적고 ‘찾기’';
+    $('find-q').focus();
+    return;
+  }
+  runFind(info ? searchQueries(info.title, info.author) : [...new Set([title, ...searchQueries(title)])], title);
+});
+
+$('find-go').addEventListener('click', manualFind);
+$('find-q').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault();
+  manualFind();
+});
+$('f-title').addEventListener('input', () => (autoTitle = false));
 
 function commitEdit() {
   const title = $('f-title').value.trim();
@@ -602,7 +709,10 @@ function showSync(song) {
   const video = $('s-video');
   const learnBox = $('s-learn');
   const source = $('s-source');
-  let mode = timedAlready && !song.ref ? 'learn' : 'tap'; // tap: 줄 시간 찍기, learn: 음악만 기억
+  let mode = timedAlready && !song.ref ? 'learn' : 'tap'; // tap: 줄 시간 찍기, learn: 시간 확인·음악 기억
+  const timedLines = timedAlready ? parseLrc(song.text) : [];
+  let shift = song.offset ?? 0; // 시간 확인에서 맞춘 보정(무대의 싱크 ±와 같은 값)
+  let shownIdx = null;
 
   const marks = []; // 줄마다 시작 시간(초)
   const learned = []; // 기억한 크로마, 칸 번호 = 시간 / HOP
@@ -660,8 +770,7 @@ function showSync(song) {
 
     $('s-mode').hidden = !timedAlready || started;
     for (const b of $('s-mode').children) b.classList.toggle('on', b.dataset.mode === mode);
-    if (!tapping) learnBox.checked = true;
-    learnBox.disabled = started || !tapping;
+    learnBox.disabled = started;
     source.disabled = started || !learnBox.checked;
     $('s-learned').textContent = learnedCount
       ? `기억한 음악 ${formatTime(learnedCount * HOP, false)}${player ? ` / ${formatTime(player.getDuration(), false)}` : ''}`
@@ -672,9 +781,7 @@ function showSync(song) {
       $('s-now').textContent = done ? '끝! 저장해' : texts[i];
       $('s-next').textContent = texts[i + 1] ?? '';
     } else {
-      $('s-prev').textContent = '';
-      $('s-now').textContent = started ? '음악 기억하는 중 ♪' : '음악만 기억하기';
-      $('s-next').textContent = '곡 끝까지 틀어 두면 무대에서 마이크로 듣고 따라가';
+      showPreview(true);
     }
 
     const tapBtn = $('s-tap');
@@ -684,7 +791,8 @@ function showSync(song) {
     tapBtn.disabled = starting || waitingVideo || done || (!tapping && started && !player);
     $('s-undo').hidden = !tapping;
     $('s-undo').disabled = marks.length === 0;
-    $('s-save').disabled = !(tapping ? done : learnedCount * HOP >= 10);
+    $('s-first').hidden = tapping || !started;
+    $('s-save').disabled = !(tapping ? done : learnedCount * HOP >= 10 || shift !== (song.offset ?? 0));
 
     $('s-hint').textContent = !started
       ? waitingVideo
@@ -694,16 +802,48 @@ function showSync(song) {
             ? '‘시작’을 누르면 영상이 재생돼. 노란 줄을 부르기 시작할 때마다 화면이나 스페이스바를 탭해.'
             : '음악 재생을 누르는 순간 ‘시작’ → 노란 줄을 부르기 시작할 때마다 화면이나 스페이스바를 탭해.'
           : player
-            ? '‘시작’을 누르면 영상이 재생되면서 음악을 기억해.'
-            : '음악 재생을 누르는 순간 ‘시작’. 가사 시간이 이 기준이라 같이 눌러야 해.'
+            ? '‘시작’ → 영상에 맞춰 가사가 넘어가. 어긋나면 노래가 새 줄을 시작하는 순간 화면을 탭해(전체 시간이 맞춰져).'
+            : '음악 재생을 누르는 순간 ‘시작’ → 가사가 어긋나면 노래가 새 줄을 시작하는 순간 화면을 탭해.'
       : tapping
         ? done
           ? `${texts.length}줄 다 찍었어. ${learnBox.checked ? '음악을 끝까지 기억시키려면 영상이 끝난 뒤 ' : ''}저장해.`
           : `${i + 1} / ${texts.length}줄 · 잘못 눌렀으면 ‘한 줄 취소’(⌫)${player ? ' — 영상도 앞 줄로 돌아가' : ''}`
-        : '영상이 끝나면 저장해. 중간에 멈추거나 되감아도 괜찮아.';
+        : `${shift === 0 ? '시간 보정 없음' : `시간 보정 ${Math.abs(shift).toFixed(2)}초 ${shift > 0 ? '빨리' : '늦게'}`} · 어긋나면 새 줄 시작할 때 탭, 한참 어긋나면 ‘첫 소절 시작!’${learnBox.checked ? ' · 음악은 끝까지 틀어 두면 좋아' : ''}`;
+  }
+
+  // 시간 확인: 지금 영상 시간에 맞는 줄을 보여준다
+  function showPreview(force = false) {
+    const idx = lineIndexAt(timedLines, clock() + shift);
+    if (idx === shownIdx && !force) return;
+    shownIdx = idx;
+    const text = (i) => (i >= 0 && timedLines[i] ? timedLines[i].text || '♪' : '');
+    $('s-prev').textContent = text(idx - 1);
+    $('s-now').textContent = text(idx);
+    $('s-next').textContent = text(idx + 1);
+  }
+
+  // 노래가 새 줄을 시작한 순간 탭: 가까운 줄(지금 줄/다음 줄)이 지금 시작하도록 전체 시간을 옮긴다
+  function correct(first = false) {
+    if (!started || !timedLines.length) return;
+    const c = clock();
+    const idx = lineIndexAt(timedLines, c + shift);
+    const candidates = first
+      ? [timedLines.findIndex((l) => l.text)]
+      : [idx, idx + 1].filter((i) => timedLines[i]?.text);
+    const dist = (i) => Math.abs(timedLines[i].time - shift - c);
+    const target = candidates.sort((a, b) => dist(a) - dist(b))[0];
+    if (target === undefined || target < 0) return;
+    shift = Math.round((timedLines[target].time - c) * 100) / 100;
+    const pad = $('s-pad');
+    pad.classList.remove('flash');
+    void pad.offsetWidth;
+    pad.classList.add('flash');
+    showPreview(true);
+    render();
   }
 
   function tick() {
+    if (mode === 'learn') showPreview();
     $('s-clock').textContent = formatTime(clock());
     raf = requestAnimationFrame(tick);
   }
@@ -751,7 +891,8 @@ function showSync(song) {
   }
 
   function tap() {
-    if (!started || mode !== 'tap' || marks.length >= texts.length) return;
+    if (mode === 'learn') return correct();
+    if (!started || marks.length >= texts.length) return;
     const t = clock();
     if (marks.length && t <= marks.at(-1)) return toast('영상이 앞 줄보다 앞이야. 앞으로 가서 눌러줘');
     marks.push(t);
@@ -773,6 +914,8 @@ function showSync(song) {
     if (mode === 'tap') {
       song.text = toLrc(texts.map((text, i) => ({ time: marks[i], text })));
       song.offset = 0;
+    } else {
+      song.offset = shift;
     }
     const remembered = learnedCount * HOP >= 10;
     if (remembered) {
@@ -802,6 +945,7 @@ function showSync(song) {
     else if (mode === 'learn' && player) playing() ? player.pauseVideo() : player.playVideo();
   });
   on($('s-undo'), 'click', undo);
+  on($('s-first'), 'click', () => correct(true));
   on($('s-save'), 'click', save);
   on($('s-mode'), 'click', (e) => {
     const b = e.target.closest('[data-mode]');
@@ -818,7 +962,7 @@ function showSync(song) {
       document.activeElement?.blur?.();
       if (e.repeat) return;
       if (!started) start();
-      else if (mode === 'tap') tap();
+      else tap();
     } else if (e.key === 'Backspace') {
       e.preventDefault();
       undo();
